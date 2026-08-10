@@ -45,7 +45,7 @@ type BridgeErrorMessage = {
 };
 
 const WS_ID = "easyeda-mcp-bridge";
-const EXTENSION_VERSION = "0.1.0";
+const EXTENSION_VERSION = "0.1.1";
 const bridgeConfig = getBridgeConfig();
 
 type ConnectionPhase = "idle" | "connecting" | "connected" | "blocked";
@@ -322,9 +322,12 @@ function handleConnectionFailure(
   connectionState.compatibility = evaluateProtocolCompatibility(PROTOCOL_VERSION);
   connectionState.phase = isPermissionLikeError(error) ? "blocked" : "idle";
 
-  const hasRetryLeft = options.shouldRetry && connectionState.attemptIndex < bridgeConfig.reconnectDelayMs.length - 1;
-  if (hasRetryLeft) {
-    const nextAttempt = connectionState.attemptIndex + 1;
+  const shouldRetry = options.shouldRetry && connectionState.phase !== "blocked";
+  if (shouldRetry) {
+    const nextAttempt = Math.min(
+      connectionState.attemptIndex + 1,
+      bridgeConfig.reconnectDelayMs.length - 1
+    );
     const delayMs = bridgeConfig.reconnectDelayMs[nextAttempt];
     connectionState.attemptIndex = nextAttempt;
     connectionState.reconnectTimer = setTimeout(() => {
@@ -336,7 +339,7 @@ function handleConnectionFailure(
     }, delayMs);
   }
 
-  if (options.manual || !hasRetryLeft || connectionState.phase === "blocked") {
+  if (options.manual || connectionState.phase === "blocked") {
     showMessage("EasyEDA MCP Bridge", [
       error.message,
       "",

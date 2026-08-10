@@ -17,7 +17,7 @@ Fix:
 3. open a schematic or PCB
 4. confirm the extension is installed or loaded
 5. enable external interaction permission
-6. run `MCP Bridge -> Reconnect`
+6. wait for the automatic reconnect, or run `MCP Bridge -> Reconnect` to retry immediately
 7. run `easyeda_doctor` again
 
 ## MCP Client Does Not Show Tools
@@ -34,6 +34,23 @@ Fix:
 3. reconnect the EasyEDA Pro extension
 
 Why: most MCP clients load the tool catalog when the session starts.
+
+## ChatGPT Does Not Open With EasyEDA Pro on macOS
+
+Install or refresh the per-user startup watcher:
+
+```bash
+npm run autostart:install:macos
+```
+
+Then verify that launchd knows about it:
+
+```bash
+launchctl print "gui/$(id -u)/io.github.vlab-software.easyeda-mcp-autostart"
+```
+
+The watcher requires EasyEDA Pro at `/Applications/EasyEDA-Pro.app` and ChatGPT
+at `/Applications/ChatGPT.app`.
 
 ## `dist/index.js` Is Missing
 

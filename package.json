@@ -27,6 +27,8 @@
   },
   "files": [
     "dist",
+    "scripts/install-macos-autostart.mjs",
+    "scripts/macos/easyeda-mcp-autostart.sh",
     "README.md"
   ],
   "bin": {
@@ -39,6 +41,8 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "package:extension": "node scripts/package-extension.mjs",
+    "autostart:install:macos": "node scripts/install-macos-autostart.mjs",
+    "autostart:uninstall:macos": "node scripts/install-macos-autostart.mjs --uninstall",
     "prepublishOnly": "npm run build",
     "package:all": "npm run build && npm run build:extension && npm run package:extension",
     "setup:local": "npm run package:all",

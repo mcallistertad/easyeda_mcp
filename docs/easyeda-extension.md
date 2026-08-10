@@ -63,6 +63,25 @@ Healthy output should show:
 - compatible bridge protocol
 - an active project or document
 
+## Automatic Startup on macOS
+
+The EasyEDA extension now keeps retrying the local bridge, using a capped delay,
+until the MCP host becomes available. To also open the ChatGPT desktop MCP host
+quietly whenever EasyEDA Pro is running, install the per-user LaunchAgent:
+
+```bash
+npm run autostart:install:macos
+```
+
+The watcher checks every five seconds. It does not keep ChatGPT in the foreground,
+and it does not expose the local bridge beyond `127.0.0.1`.
+
+To remove it:
+
+```bash
+npm run autostart:uninstall:macos
+```
+
 Then ask:
 
 ```text
@@ -76,7 +95,8 @@ Use these commands inside EasyEDA Pro when needed:
 - `MCP Bridge -> Reconnect`
 - `MCP Bridge -> Run Diagnostics`
 
-`Reconnect` is the fastest fix when the server was restarted after EasyEDA Pro was already open.
+The extension reconnects automatically when the MCP host starts or restarts. Use
+`Reconnect` to force an immediate attempt instead of waiting for the next retry.
 
 ## Packaging Rules
 
