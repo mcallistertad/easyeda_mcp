@@ -139,6 +139,31 @@ describe("EasyEDA extension bridge handlers", () => {
     });
   });
 
+  it("keeps retrying with the final reconnect delay until the MCP host is available", async () => {
+    const extension = await import("./index.js");
+    const register = (globalThis as { eda: Record<string, any> }).eda.sys_WebSocket.register;
+
+    extension.activate("onStartupFinished");
+    expect(register).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(2_500);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(register).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(2_500);
+    await vi.advanceTimersByTimeAsync(2_500);
+    expect(register).toHaveBeenCalledTimes(3);
+
+    await vi.advanceTimersByTimeAsync(2_500);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(register).toHaveBeenCalledTimes(4);
+
+    await vi.advanceTimersByTimeAsync(2_500);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(register).toHaveBeenCalledTimes(5);
+    expect(dialogMessages).toEqual([]);
+  });
+
   it("infers schematic type from numeric documentType in status", async () => {
     vi.stubGlobal("eda", {
       ...(globalThis as { eda: Record<string, unknown> }).eda,
