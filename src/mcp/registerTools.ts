@@ -127,11 +127,14 @@ export function registerEasyEdaTools(server: McpServer, bridge: EasyEdaBridge): 
       const status = bridge.getStatus();
       const hasDocumentContext = Boolean(status.documentName || status.projectName || status.documentInfo);
       const nextSteps = doctorNextSteps(status);
-      const summary = status.connected
-        ? status.compatibility?.compatible === false
+      let summary = "Bridge diagnostics found that the EasyEDA Pro extension is disconnected.";
+      if (bridgePortIsBusy(status)) {
+        summary = "Bridge diagnostics found that another process owns the EasyEDA bridge port. This MCP server is waiting and will retry automatically.";
+      } else if (status.connected) {
+        summary = status.compatibility?.compatible === false
           ? "Bridge diagnostics found a protocol compatibility problem."
-          : "Bridge diagnostics look healthy."
-        : "Bridge diagnostics found that the EasyEDA Pro extension is disconnected.";
+          : "Bridge diagnostics look healthy.";
+      }
       return ok(summary, {
         doctor: {
           server: {
@@ -448,6 +451,14 @@ export function registerEasyEdaTools(server: McpServer, bridge: EasyEdaBridge): 
 }
 
 function doctorNextSteps(status: EditorStatus): string[] {
+  if (bridgePortIsBusy(status)) {
+    return [
+      "Close or stop the MCP client that currently owns the EasyEDA bridge port.",
+      "Keep this MCP server running; it will acquire the port automatically when the current owner exits.",
+      "Run easyeda_doctor again after the EasyEDA Pro extension reconnects."
+    ];
+  }
+
   if (!status.connected) {
     return [
       "Open EasyEDA Pro.",
@@ -476,6 +487,10 @@ function doctorNextSteps(status: EditorStatus): string[] {
     "The bridge looks healthy.",
     "Use easyeda_live_status for quick checks and easyeda_get_context for deeper editor state."
   ];
+}
+
+function bridgePortIsBusy(status: EditorStatus): boolean {
+  return !status.connected && status.message?.includes("already in use") === true;
 }
 
 type ReadToolConfig = {

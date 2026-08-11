@@ -35,6 +35,27 @@ Fix:
 
 Why: most MCP clients load the tool catalog when the session starts.
 
+## MCP Startup Reports a Closed `initialize` Response
+
+Older server builds exit when another process already owns the WebSocket bridge
+at `127.0.0.1:8765`. This commonly happens when more than one local MCP client
+is open.
+
+Current builds keep the MCP connection initialized, report the occupied port in
+`easyeda_doctor`, and retry automatically. Close the MCP client that currently
+owns the bridge; the waiting client will acquire it without another restart.
+
+On macOS, find the current listener with:
+
+```bash
+lsof -nP -iTCP:8765 -sTCP:LISTEN
+```
+
+If the listener is an older `easyeda_mcp/dist/index.js` process whose client is
+no longer needed, exit that client normally or terminate only that process. If
+an unrelated program owns the port, move that program or configure both the MCP
+server and EasyEDA extension to use another bridge port.
+
 ## ChatGPT Does Not Open With EasyEDA Pro on macOS
 
 Install or refresh the per-user startup watcher:
@@ -80,7 +101,8 @@ Check:
 2. the extension is targeting the same host and port
 3. `EASYEDA_MCP_WS_HOST` was not changed unexpectedly
 4. `EASYEDA_MCP_WS_PORT` was not changed unexpectedly
-5. local security tooling is not blocking loopback WebSocket traffic
+5. `easyeda_doctor` does not report that another process owns the bridge port
+6. local security tooling is not blocking loopback WebSocket traffic
 
 ## EasyEDA Pro Rejects the Extension Package
 

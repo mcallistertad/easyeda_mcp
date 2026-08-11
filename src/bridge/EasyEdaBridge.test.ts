@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { EasyEdaBridge } from "./EasyEdaBridge.js";
 import { BridgeProtocolCompatibilityError, BridgeRpcError, BridgeUnavailableError } from "./errors.js";
@@ -14,7 +14,44 @@ describe("EasyEdaBridge", () => {
     const bridge = await startBridge();
 
     expect(bridge.getStatus().connected).toBe(false);
+    expect(bridge.getStatus().message).toContain("WebSocket bridge is listening");
     await expect(bridge.call("getContext")).rejects.toBeInstanceOf(BridgeUnavailableError);
+  });
+
+  it("keeps retrying when the requested port is busy and acquires it when released", async () => {
+    const currentOwner = await startBridge();
+    const port = Number(new URL(currentOwner.endpoint).port);
+    const messages: string[] = [];
+    const waitingBridge = new EasyEdaBridge({
+      port,
+      retryDelayMs: 10,
+      logger: {
+        error: (message) => messages.push(String(message)),
+        warn: () => undefined,
+        info: () => undefined
+      }
+    });
+    bridges.push(waitingBridge);
+
+    await waitingBridge.start();
+
+    expect(waitingBridge.getStatus()).toMatchObject({
+      connected: false,
+      connectionState: "disconnected"
+    });
+    expect(waitingBridge.getStatus().message).toContain("already in use");
+    expect(messages.some((message) => message.includes("MCP tools remain available"))).toBe(true);
+    await wait(35);
+    expect(messages.filter((message) => message.includes("already in use"))).toHaveLength(1);
+
+    await currentOwner.stop();
+    await vi.waitFor(() => {
+      expect(waitingBridge.getStatus().message).toContain("WebSocket bridge is listening");
+    }, { timeout: 2_000, interval: 10 });
+
+    const client = await connectClient(waitingBridge.endpoint);
+    expect(client.readyState).toBe(WebSocket.OPEN);
+    client.close();
   });
 
   it("round-trips RPC calls through a WebSocket extension client", async () => {

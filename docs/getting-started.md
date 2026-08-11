@@ -136,3 +136,4 @@ Optional overrides:
 
 - `EASYEDA_MCP_WS_HOST`
 - `EASYEDA_MCP_WS_PORT`
+- `EASYEDA_MCP_WS_RETRY_MS` (defaults to `1000`)
