@@ -6,12 +6,11 @@ import { createMcpServer } from "./mcp/server.js";
 
 async function main(): Promise<void> {
   const bridge = new EasyEdaBridge();
-  await bridge.start();
-
   const server = createMcpServer(bridge);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   installLifecycleHandlers({ bridge, server, transport });
+  await bridge.start();
 }
 
 main().catch((error) => {

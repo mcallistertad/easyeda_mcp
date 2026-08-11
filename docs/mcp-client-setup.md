@@ -57,6 +57,11 @@ Use this order to avoid connection confusion:
 5. load or reconnect the extension
 6. run `easyeda_doctor`
 
+Only one local MCP server can own the default EasyEDA bridge port at a time. If
+another client already owns `127.0.0.1:8765`, the server remains initialized and
+retries until the port is released. This keeps the MCP tool catalog available
+and lets a waiting client recover without restarting it.
+
 ## What Happens at Runtime
 
 The MCP client talks to the server over `stdio`.
@@ -80,8 +85,9 @@ Optional environment variables:
 
 - `EASYEDA_MCP_WS_HOST`
 - `EASYEDA_MCP_WS_PORT`
+- `EASYEDA_MCP_WS_RETRY_MS` (defaults to `1000`)
 
-Only change these if you also update the extension bridge target.
+Only host and port changes require updating the extension bridge target.
 
 ## Verify
 

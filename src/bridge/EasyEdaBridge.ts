@@ -20,21 +20,28 @@ type PendingCall = {
 export type EasyEdaBridgeOptions = {
   host?: string;
   port?: number;
+  retryDelayMs?: number;
   logger?: Pick<Console, "error" | "warn" | "info">;
 };
 
 export class EasyEdaBridge {
   private readonly host: string;
   private readonly port: number;
+  private readonly retryDelayMs: number;
   private readonly logger: Pick<Console, "error" | "warn" | "info">;
   private wss?: WebSocketServer;
   private socket?: WebSocket;
+  private startPromise?: Promise<void>;
+  private retryTimer?: NodeJS.Timeout;
+  private stopping = false;
+  private waitingForPort = false;
   private readonly pending = new Map<string, PendingCall>();
   private status: EditorStatus = createDisconnectedStatus();
 
   constructor(options: EasyEdaBridgeOptions = {}) {
     this.host = options.host ?? process.env.EASYEDA_MCP_WS_HOST ?? "127.0.0.1";
     this.port = options.port ?? Number(process.env.EASYEDA_MCP_WS_PORT ?? 8765);
+    this.retryDelayMs = options.retryDelayMs ?? Number(process.env.EASYEDA_MCP_WS_RETRY_MS ?? 1_000);
     this.logger = options.logger ?? console;
   }
 
@@ -49,37 +56,51 @@ export class EasyEdaBridge {
   }
 
   async start(): Promise<void> {
+    this.stopping = false;
     if (this.wss) {
       return;
     }
 
-    this.wss = new WebSocketServer({ host: this.host, port: this.port });
-    this.wss.on("connection", (socket) => this.attachSocket(socket));
-    await new Promise<void>((resolve, reject) => {
-      this.wss?.once("listening", resolve);
-      this.wss?.once("error", reject);
-    });
-    this.logger.error(`[easyeda-mcp] WebSocket bridge listening at ${this.endpoint}`);
+    if (this.startPromise || this.retryTimer) {
+      return this.startPromise;
+    }
+
+    const startPromise = this.startOnce();
+    this.startPromise = startPromise;
+    try {
+      await startPromise;
+    } finally {
+      if (this.startPromise === startPromise) {
+        this.startPromise = undefined;
+      }
+    }
   }
 
   async stop(): Promise<void> {
+    this.stopping = true;
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = undefined;
+    }
+    this.waitingForPort = false;
     this.rejectAll(new BridgeUnavailableError("EasyEDA Pro bridge is stopping."));
     this.socket?.close();
+    const wss = this.wss;
+    this.wss = undefined;
     await new Promise<void>((resolve, reject) => {
-      if (!this.wss) {
+      if (!wss) {
         resolve();
         return;
       }
-      this.wss.close((error) => (error ? reject(error) : resolve()));
+      wss.close((error) => (error ? reject(error) : resolve()));
     });
-    this.wss = undefined;
     this.socket = undefined;
     this.status = createDisconnectedStatus();
   }
 
   async call(method: string, params?: unknown, timeoutMs = 10_000): Promise<unknown> {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      throw new BridgeUnavailableError();
+      throw new BridgeUnavailableError(this.status.message);
     }
 
     if (this.status.compatibility && !this.status.compatibility.compatible) {
@@ -150,6 +171,84 @@ export class EasyEdaBridge {
     });
   }
 
+  private async startOnce(): Promise<void> {
+    const wss = new WebSocketServer({ host: this.host, port: this.port });
+    this.wss = wss;
+    wss.on("connection", (socket) => this.attachSocket(socket));
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const onListening = () => {
+          wss.off("error", onError);
+          resolve();
+        };
+        const onError = (error: Error) => {
+          wss.off("listening", onListening);
+          reject(error);
+        };
+        wss.once("listening", onListening);
+        wss.once("error", onError);
+      });
+    } catch (error) {
+      wss.removeAllListeners();
+      if (this.wss === wss) {
+        this.wss = undefined;
+      }
+
+      if (this.stopping) {
+        return;
+      }
+
+      if (isAddressInUseError(error)) {
+        const message = `WebSocket bridge ${this.endpoint} is already in use. MCP tools remain available and the bridge will retry in ${this.retryDelayMs}ms.`;
+        this.status = createDisconnectedStatus(message);
+        if (!this.waitingForPort) {
+          this.logger.error(`[easyeda-mcp] ${message}`);
+        }
+        this.waitingForPort = true;
+        this.scheduleRetry();
+        return;
+      }
+
+      throw error;
+    }
+
+    if (this.stopping) {
+      await new Promise<void>((resolve, reject) => {
+        wss.close((error) => (error ? reject(error) : resolve()));
+      });
+      if (this.wss === wss) {
+        this.wss = undefined;
+      }
+      return;
+    }
+
+    this.waitingForPort = false;
+    this.status = createDisconnectedStatus(`EasyEDA Pro extension is not connected. WebSocket bridge is listening at ${this.endpoint} and waiting for the extension.`);
+    wss.on("error", (error) => {
+      this.logger.error(`[easyeda-mcp] WebSocket bridge error: ${String(error)}`);
+    });
+    this.logger.error(`[easyeda-mcp] WebSocket bridge listening at ${this.endpoint}`);
+  }
+
+  private scheduleRetry(): void {
+    if (this.retryTimer || this.stopping) {
+      return;
+    }
+
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined;
+      if (this.stopping) {
+        return;
+      }
+      void this.start().catch((error) => {
+        this.status = createDisconnectedStatus(`WebSocket bridge could not start: ${String(error)}`);
+        this.logger.error(`[easyeda-mcp] WebSocket bridge retry failed: ${String(error)}`);
+      });
+    }, this.retryDelayMs);
+    this.retryTimer.unref();
+  }
+
   private handleMessage(message: ClientToServerMessage): void {
     if (message.kind === "hello") {
       const compatibility = evaluateProtocolCompatibility(message.protocolVersion);
@@ -215,4 +314,8 @@ export class EasyEdaBridge {
       this.pending.delete(requestId);
     }
   }
+}
+
+function isAddressInUseError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === "EADDRINUSE";
 }

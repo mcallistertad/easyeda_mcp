@@ -202,6 +202,38 @@ describe("mutation confirmation guard", () => {
     });
   });
 
+  it("returns automatic recovery steps when another process owns the bridge port", async () => {
+    const bridge = {
+      endpoint: "ws://127.0.0.1:8765",
+      getStatus: () => ({
+        connected: false,
+        connectionState: "disconnected",
+        message: "WebSocket bridge ws://127.0.0.1:8765 is already in use. MCP tools remain available and the bridge will retry in 1000ms.",
+        updatedAt: new Date().toISOString()
+      }),
+      call: vi.fn()
+    };
+    const client = await makeClient(bridge);
+
+    const result = await client.callTool({
+      name: "easyeda_doctor",
+      arguments: {}
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0]?.type).toBe("text");
+    expect(result.content[0]?.text).toContain("another process owns");
+    expect(result.structuredContent).toMatchObject({
+      doctor: {
+        nextSteps: [
+          expect.stringContaining("currently owns"),
+          expect.stringContaining("automatically"),
+          expect.stringContaining("easyeda_doctor")
+        ]
+      }
+    });
+  });
+
   it("marks the active document as available when documentInfo exists", async () => {
     const bridge = {
       endpoint: "ws://127.0.0.1:8765",
